@@ -3,19 +3,23 @@ const std = @import("std");
 pub fn build(b: *std.Build) !void {
     const upstream = b.dependency("pixman", .{});
 
-    const lib = b.addLibrary(.{
-        .name = "pixman",
-        .root_module = b.createModule(.{
-            .target = b.standardTargetOptions(.{}),
-            .optimize = b.standardOptimizeOption(.{}),
-        }),
+    const pixman_path = upstream.path("pixman");
+
+    const pixman_mod = b.createModule(.{
+        .target = b.standardTargetOptions(.{}),
+        .optimize = b.standardOptimizeOption(.{}),
+        .link_libc = true,
     });
 
-    lib.root_module.link_libc = true;
-    lib.root_module.addCMacro("HAVE_CONFIG_H", "1");
+    const lib = b.addLibrary(.{
+        .name = "pixman-1",
+        .root_module = pixman_mod,
+    });
+
+    pixman_mod.addCMacro("HAVE_CONFIG_H", "");
 
     const config_h = b.addConfigHeader(.{
-        .include_path = "config.h",
+        .include_path = "pixman-config.h",
     }, .{
         // Required to make pixman-private.h
         .PACKAGE = "FOO",
@@ -23,12 +27,32 @@ pub fn build(b: *std.Build) !void {
     });
     lib.root_module.addConfigHeader(config_h);
 
+    const version_h = b.addConfigHeader(
+        .{
+            .style = .{ .meson = pixman_path.path(b, "pixman-version.h.in") },
+        },
+        .{
+            .PIXMAN_VERSION_MAJOR = 0,
+            .PIXMAN_VERSION_MINOR = 46,
+            .PIXMAN_VERSION_MICRO = 4,
+        },
+    );
+
+    pixman_mod.addConfigHeader(version_h);
+
     lib.root_module.addIncludePath(upstream.path("pixman"));
     lib.installHeadersDirectory(upstream.path("pixman"), "", .{});
     lib.root_module.addCSourceFiles(.{
         .root = upstream.path("pixman"),
         .files = sources,
     });
+
+    const include = b.addWriteFiles();
+
+    _ = include.addCopyFile(pixman_path.path(b, "pixman.h"), "pixman.h");
+    _ = include.addCopyFile(version_h.getOutputFile(), "pixman-version.h");
+
+    b.addNamedLazyPath("include", include.getDirectory());
 
     b.installArtifact(lib);
 }
